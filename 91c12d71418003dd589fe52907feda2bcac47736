@@ -1,39 +1,44 @@
-- name: Install dependencies
-  run: |
-    python -m pip install --upgrade pip
-    python -m pip install flake8 pytest
-    if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fijobs:
-  build:
-
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.10", "3.11"]runner.osrequirements.txt  - name: Set up Python
-    uses: actions/setup-python@v4
-    with:
-      python-version: ${{ matrix.python-version }}
-
-  - name: Cache pip
+  - name: Cache Gradle
     uses: actions/cache@v4
     with:
-      path: ~/.cache/pip
-      key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
+      path: |
+        ~/.gradle/caches
+        ~/.gradle/wrapper
+      key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
       restore-keys: |
-        ${{ runner.os }}-pip-${{ matrix.python-version }}-
-        ${{ runner.os }}-pip-
+        ${{ runner.os }}-gradle-
 
-  - name: Install dependencies
+  - name: Set up JDK 17
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: 17
+
+  - name: Set up Android emulator & SDK (prepare only)
+    uses: reactivecircus/android-emulator-runner@v2
+    with:
+      api-level: 31
+      target: google_apis
+      arch: x86_64
+      emulator-options: -no-window -no-audio -no-boot-anim
+      script: false
+
+  - name: Build Android (Gradle)
     run: |
-      python -m pip install --upgrade pip
-      if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      chmod +x ./gradlew
+      ./gradlew assembleDebug --no-daemon
+    shell: bash
 
-  - name: Run tests
+  - name: Run unit tests (JVM)
     run: |
-      if command -v pytest >/dev/null 2>&1; then pytest -q; else echo "pytest not installed"; fi
-Notes
-- I added Python 3.12 to the matrix. If you want to keep the original three versions, remove "3.12".
-- If you use Poetry or pipenv, swap the Install dependencies step accordingly.
-- If you want caching for virtualenvs, dependency-lock handling, or Windows/macOS runners, I can extend this.
+      ./gradlew test --no-daemon
+    shell: bash
 
-Tell me which change you want (e.g., add 3.12, support Windows/macOS, use Poetry, run flake8/mypy, or keep only the matrix snippet).
+  - name: Run instrumentation tests on emulator
+    uses: reactivecircus/android-emulator-runner@v2
+    with:
+      api-level: 31
+      target: google_apis
+      arch: x86_64
+      emulator-options: -no-window -no-audio -no-boot-anim
+      script: ./gradlew connectedAndroidTest --no-daemon
